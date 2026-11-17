@@ -129,6 +129,35 @@ const DRAINAGE_CHANNELS: { id: string; lga: string; ring: [number, number][] }[]
   },
 ];
 
+function osmRasterStyle(dark: boolean): maplibreModule.StyleSpecification {
+  return {
+    version: 8,
+    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+    sources: {
+      osm: {
+        type: "raster",
+        tiles: [
+          "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+          "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+          "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        ],
+        tileSize: 256,
+        attribution: "© OpenStreetMap contributors · CARTO",
+      },
+    },
+    layers: [
+      {
+        id: "osm-tiles",
+        type: "raster",
+        source: "osm",
+        paint: dark
+          ? { "raster-brightness-max": 0.42, "raster-saturation": -0.65, "raster-contrast": 0.15 }
+          : { "raster-saturation": -0.15 },
+      },
+    ],
+  };
+}
+
 function fleetPositionState(status: FleetStatus, ageSec: number): PositionState {
   if (status === "No signal" || ageSec >= FM_MISSING_SECONDS) return "Missing update";
   if (ageSec >= FM_STALE_SECONDS) return "Stale position";
@@ -142,7 +171,6 @@ function fleetExceptionRank(v: WorkspaceVehicle): number {
         n,
         (
           {
-            "Fuel syphon alert": 0,
             Breakdown: 0,
             "Route departure": 1,
             "Long queue": 2,
@@ -205,6 +233,56 @@ function truckImage(): ImageData {
   return g.getImageData(0, 0, 48, 64);
 }
 
+function createPinMarkerEl(
+  v: WorkspaceVehicle,
+  isSelected: boolean,
+  showLabel: boolean,
+  onSelect: (v: WorkspaceVehicle) => void,
+): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "fm-marker-pin";
+  btn.setAttribute("aria-label", `${v.code} · ${v.plate} (${v.status})`);
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    onSelect(v);
+  };
+  const bg =
+    v.exceptions.length > 0
+      ? "#eb3424"
+      : v.positionState === "Stale position"
+        ? "#ecb730"
+        : COLORS[v.status];
+  btn.style.cssText = [
+    "display:inline-flex",
+    "align-items:center",
+    "gap:4px",
+    showLabel ? "padding:3px 7px" : "padding:4px",
+    "border-radius:9999px",
+    "font-family:var(--sc-mono,monospace)",
+    "font-size:10px",
+    "font-weight:600",
+    "line-height:1",
+    "white-space:nowrap",
+    "cursor:pointer",
+    `background:${bg}`,
+    "color:#ffffff",
+    "border:2px solid #ffffff",
+    "box-shadow:0 2px 6px rgba(0,0,0,0.28)",
+    isSelected ? "outline:3px solid #f47707;outline-offset:2px;transform:scale(1.12);z-index:20" : "",
+  ]
+    .filter(Boolean)
+    .join(";");
+
+  const isKeke = v.tier.includes("Tricycle");
+  const iconSvg = isKeke
+    ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 18H15V9h4l2 4v5h-1"/></svg>`
+    : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M3 6h11v11H3zM14 10h4l3 4v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>`;
+
+  btn.innerHTML = showLabel ? `${iconSvg}<span>${v.code}</span>` : iconSvg;
+  return btn;
+}
+
 function buildFleetDataset(
   partnerName: string,
   concessionId: string,
@@ -222,22 +300,50 @@ function buildFleetDataset(
     "GPS gap during service",
     "Duplicate tag needs review",
   ];
-  const exceptionIDs = new Set([42, 18, 63, ...Array.from({ length: 21 }, (_, i) => 99 + i * 41)]);
-  const crewLeads = ["Babatunde A.", "Musa K.", "Adaeze N.", "Tunde O.", "Bisi A.", "Chinedu E."];
+  const exceptionIDs = new Set([42, 18, 63, 99, 140, 181, 222, ...Array.from({ length: 18 }, (_, i) => 263 + i * 41)]);
+  const crewLeads = ["Babatunde A.", "Musa K.", "Adaeze N.", "Tunde O.", "Bisi A.", "Chinedu E.", "Rasheed T.", "Grace I."];
+
+  const isCoastal = primaryAreas.some((a) => a.includes("Lekki") || a.includes("Ajah"));
+  const preferredRouteIndices = isCoastal
+    ? ROUTES.map((r, idx) => (["Eti-Osa", "Lagos Island", "Ibeju-Lekki", "Ikoyi", "Apapa"].includes(r.name) ? idx : -1)).filter((x) => x >= 0)
+    : ROUTES.map((r, idx) => (["Ikeja", "Kosofe", "Agege", "Oshodi-Isolo", "Mushin", "Alimosho"].includes(r.name) ? idx : -1)).filter((x) => x >= 0);
 
   const list = Array.from({ length: 1000 }, (_, i): WorkspaceVehicle => {
     const n = i + 1;
+    const isPspFleet = n === 42 || n === 18 || n === 63 || n === 99 || n === 140 || n === 181 || i % 18 === 0;
     const status: FleetStatus =
-      i < 684 ? "On route" : i < 860 ? "Collecting" : i < 954 ? "At facility" : "No signal";
-    const ri = n === 42 ? 0 : i % ROUTES.length;
+      n === 140
+        ? "No signal"
+        : n === 181
+          ? "At facility"
+          : n === 63
+            ? "Collecting"
+            : i < 684
+              ? "On route"
+              : i < 860
+                ? "Collecting"
+                : i < 954
+                  ? "At facility"
+                  : "No signal";
+
+    const ri =
+      n === 42
+        ? preferredRouteIndices[0] ?? 0
+        : isPspFleet && preferredRouteIndices.length > 0
+          ? preferredRouteIndices[n % preferredRouteIndices.length]!
+          : i % ROUTES.length;
     const r = ROUTES[ri]!;
-    const fraction = status === "At facility" ? 1 : 0.04 + rand() * 0.9;
+    const fraction = status === "At facility" ? 0.96 : 0.06 + rand() * 0.88;
     const p = atRoute(r, fraction);
     const planned = 36 + Math.floor(rand() * 45);
-    const reported = Math.min(planned, Math.floor(planned * (0.35 + rand() * 0.48)));
-    const isPspFleet = n === 42 || n === 18 || n === 63 || i % 18 === 0;
+    const reported = Math.min(planned, Math.floor(planned * (0.45 + rand() * 0.48)));
     const pending = exceptionIDs.has(n) ? 1 + Math.floor(rand() * 3) : 0;
-    const age = status === "No signal" ? 960 + Math.floor(rand() * 1500) : 5 + Math.floor(rand() * 53);
+    const age =
+      status === "No signal"
+        ? 960 + Math.floor(rand() * 1200)
+        : n === 99
+          ? 410
+          : 5 + Math.floor(rand() * 53);
     const positionState = fleetPositionState(status, age);
     const code = "FLT-" + String(n).padStart(4, "0");
 
@@ -245,7 +351,7 @@ function buildFleetDataset(
     if (n === 18) {
       exceptions.push({
         kind: "Breakdown",
-        note: "Mechanical fault on hydraulic tailgate; standby hot-swap unit LND 902 KJA ready",
+        note: "Hydraulic tailgate pressure drop on corridor; standby hot-swap unit LND 902 KJA dispatched (38m elapsed)",
       });
     }
     if (n === 63) {
@@ -257,7 +363,13 @@ function buildFleetDataset(
     if (n === 42) {
       exceptions.push({
         kind: "Missed collection",
-        note: "Resident missed-pickup hold on 9 Freedom Way; 48h statutory cure window active",
+        note: "Resident missed-pickup hold on 9 Freedom Way / Ward Lane; 48h statutory cure window active",
+      });
+    }
+    if (n === 181) {
+      exceptions.push({
+        kind: "Long queue",
+        note: "Oshodi / Simpson TLS Weighbridge Bay 2 · 38 min queue wait (>30m threshold)",
       });
     }
     if (positionState !== "Recent position") {
@@ -274,12 +386,6 @@ function buildFleetDataset(
     }
 
     const assignedCrew = isPspFleet && crews.length > 0 ? crews[n % crews.length] : undefined;
-    const districtName =
-      n === 42 || n === 18 || n === 63
-        ? primaryAreas[0] === "Lekki" && ROUTES.some((rt) => rt.name === "Eti-Osa")
-          ? "Eti-Osa"
-          : r.name
-        : r.name;
 
     return {
       id: n,
@@ -287,7 +393,7 @@ function buildFleetDataset(
       plate: assignedCrew?.plate ?? `LND ${String(100 + (n % 899))} KJA`,
       status,
       ri,
-      district: districtName,
+      district: r.name,
       coord: p.coord,
       heading: p.heading,
       fraction,
@@ -299,8 +405,8 @@ function buildFleetDataset(
       review: exceptions.length > 0,
       reason: reasons[n % 4]!,
       age: n === 42 ? 12 : age,
-      speed: status === "On route" ? 12 + Math.floor(rand() * 24) : 0,
-      crew: n === 42 ? crews[0]?.members[0] ?? "Babatunde A." : assignedCrew?.members[0] ?? crewLeads[i % 6]!,
+      speed: status === "On route" ? 18 + Math.floor(rand() * 24) : status === "Collecting" ? 6 : 0,
+      crew: n === 42 ? crews[0]?.members[0] ?? "Babatunde A." : assignedCrew?.members[0] ?? crewLeads[i % crewLeads.length]!,
       partnerId: isPspFleet ? concessionId : "PAR-" + String(1 + (i % 18)).padStart(3, "0"),
       psp: isPspFleet ? partnerName : "PSP partner " + String(1 + (i % 18)).padStart(2, "0"),
       tier: assignedCrew?.tier ?? (n % 4 === 0 ? "Feeder Tricycle (Keke)" : "Compactor (20T)"),
@@ -313,7 +419,9 @@ function buildFleetDataset(
           ? { ticket: "WT-4402", net: 14200, site: "Oshodi TLS (40T Transfer)", slot: "13:30 WAT" }
           : n === 18
             ? { ticket: "WT-4405", net: 6800, site: "Jospong MRF · Oshodi", slot: "14:15 WAT" }
-            : undefined,
+            : n === 181
+              ? { ticket: "WT-4414", net: 15600, site: "Simpson / Oshodi TLS Bay 2", slot: "15:00 WAT" }
+              : undefined,
     };
   });
 
@@ -337,7 +445,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
     [model.profile.name, model.wardProfile.concessionId, model.profile.areas, model.crews],
   );
 
-  // Exact Workspace Fleet Map filter state — defaults to active PSP partner's fleet (`concessionId`), with option to view all 1,000 Lagos vehicles
   const [query, setQuery] = useState("");
   const [districtSearch, setDistrictSearch] = useState("");
   const [district, setDistrict] = useState("all");
@@ -353,7 +460,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
   const [detailTab, setDetailTab] = useState<"overview" | "service" | "activity">("overview");
   const [fleetMode, setFleetMode] = useState<"map" | "list">("map");
 
-  // Layers popover state (exact match to Workspace `#layersPop`)
   const [layersOpen, setLayersOpen] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const [showRoute, setShowRoute] = useState(true);
@@ -366,12 +472,11 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
   }>({
     routes: true,
     sites: true,
-    queues: false,
-    closures: false,
+    queues: true,
+    closures: true,
     drainage: false,
   });
 
-  // Follow-up modal state
   const [followups, setFollowups] = useState<FollowupItem[]>([
     {
       id: "FF-01",
@@ -381,22 +486,29 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
       by: model.profile.name,
       at: fmStamp(snapshotDate),
     },
+    {
+      id: "FF-02",
+      vehicle: "FLT-0018",
+      owner: "Standby compactor hot-swap desk",
+      note: "Dispatched standby compactor LND 902 KJA under 60-minute breakdown SLA.",
+      by: model.profile.name,
+      at: fmStamp(snapshotDate),
+    },
   ]);
   const [followupModalFor, setFollowupModalFor] = useState<WorkspaceVehicle | null>(null);
   const [followupOwner, setFollowupOwner] = useState("PSP service liaison");
   const [followupNote, setFollowupNote] = useState("");
   const [toastMsg, setToastMsg] = useState("");
 
-  // Map refs
   const mapRegionRef = useRef<HTMLDivElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibreModule.Map | null>(null);
+  const markersRef = useRef<Map<number, maplibreModule.Marker>>(new Map());
   const readyRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
 
-  // Sync pspFilter when switching partner accounts in the sidebar
   useEffect(() => {
     setPspFilter(model.wardProfile.concessionId);
     setPage(0);
@@ -407,7 +519,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
     setTimeout(() => setToastMsg(""), 3500);
   }, []);
 
-  // Scope for top metrics (before status / freshness / exception sub-filters)
   const metricScope = useMemo(() => {
     const q = query.trim().toLowerCase();
     return fleet.filter(
@@ -418,7 +529,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
     );
   }, [fleet, district, pspFilter, query]);
 
-  // All filtered vehicles (matches Workspace `allFiltered()`)
   const allFiltered = useMemo(() => {
     return metricScope.filter(
       (v) =>
@@ -432,7 +542,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
     );
   }, [metricScope, status, freshness, exceptionKind, onlyExceptions]);
 
-  // Viewport-filtered & sorted vehicles (matches Workspace `filtered()`)
   const filtered = useMemo(() => {
     let data = [...allFiltered];
     if (viewportOnly && readyRef.current && mapRef.current) {
@@ -473,35 +582,43 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
     const b = new maplibregl.LngLatBounds();
     allFiltered.forEach((v) => b.extend(v.coord));
     try {
-      map.fitBounds(b, { padding: 75, maxZoom: 14, duration: 450 });
+      map.fitBounds(b, { padding: 75, maxZoom: 13.8, duration: 450 });
     } catch {
       // ignore
     }
   }, [allFiltered]);
 
-  const fitSelectedRoute = useCallback(
-    (v: WorkspaceVehicle | null) => {
-      const map = mapRef.current;
-      if (!map || !readyRef.current || !v) return;
-      const r = ROUTES[v.ri];
-      if (!r) return;
-      const b = new maplibregl.LngLatBounds();
-      r.coordinates.forEach((c) => b.extend(c));
-      const wide = (mapContainerRef.current?.clientWidth ?? 800) > 600;
-      try {
-        map.fitBounds(b, {
-          padding: { top: 78, bottom: 80, left: 35, right: wide ? 350 : 35 },
-          maxZoom: 15.5,
-          duration: 500,
-        });
-      } catch {
-        // ignore
+  const fitSelectedRoute = useCallback((v: WorkspaceVehicle | null) => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current || !v) return;
+    const r = ROUTES[v.ri];
+    if (!r) return;
+    const b = new maplibregl.LngLatBounds();
+    r.coordinates.forEach((c) => b.extend(c));
+    const wide = (mapContainerRef.current?.clientWidth ?? 800) > 600;
+    try {
+      map.fitBounds(b, {
+        padding: { top: 78, bottom: 80, left: 35, right: wide ? 350 : 35 },
+        maxZoom: 15.2,
+        duration: 500,
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleSelectVehicle = useCallback(
+    (v: WorkspaceVehicle) => {
+      setSelectedId(v.id);
+      setDetailTab("overview");
+      setFleetMode("map");
+      if (readyRef.current) {
+        fitSelectedRoute(v);
       }
     },
-    [],
+    [fitSelectedRoute],
   );
 
-  // Sync GeoJSON sources & layers onto MapLibre (exact match to `updateMap` + `fmOverlay` in Workspace)
   const syncMapData = useCallback(() => {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
@@ -576,7 +693,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
       map.setLayoutProperty("vehicle-labels", "visibility", showLabels ? "visible" : "none");
     }
 
-    // Overlay sources (`fm-routes`, `fm-sites`, `fm-queues`, `fm-closures`, `fm-drainage`)
     const overlayData: Record<keyof typeof overlayLayers, GeoFeature[]> = {
       routes: ROUTES.filter((r) => allFiltered.some((v) => v.district === r.name)).map((r) => ({
         type: "Feature",
@@ -625,7 +741,7 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
               id,
               type: "line",
               source: id,
-              paint: { "line-color": overlayColors[key], "line-width": 2, "line-opacity": 0.65 },
+              paint: { "line-color": overlayColors[key], "line-width": 2.2, "line-opacity": 0.7 },
               layout: { visibility: "none" },
             },
             beforeLayer,
@@ -638,7 +754,7 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
               source: id,
               paint: {
                 "fill-color": overlayColors[key],
-                "fill-opacity": 0.12,
+                "fill-opacity": 0.14,
                 "fill-outline-color": overlayColors[key],
               },
               layout: { visibility: "none" },
@@ -669,11 +785,32 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
         map.setLayoutProperty(id, "visibility", overlayLayers[key] ? "visible" : "none");
       }
     });
-  }, [allFiltered, selectedId, selectedVehicle, showRoute, showLabels, overlayLayers, dark]);
 
-  // Initialize MapLibre GL map (exact match to Workspace `initMap`)
+    // Also render crisp HTML markers for the top 30 filtered vehicles so trucks are always 100% visible even while WebGL vector tiles stream
+    const markerVehicles = allFiltered.slice(0, 30);
+    const keepIds = new Set(markerVehicles.map((v) => v.id));
+    for (const [id, marker] of markersRef.current.entries()) {
+      if (!keepIds.has(id)) {
+        marker.remove();
+        markersRef.current.delete(id);
+      }
+    }
+    for (const v of markerVehicles) {
+      const existing = markersRef.current.get(v.id);
+      if (existing) {
+        existing.remove();
+        markersRef.current.delete(v.id);
+      }
+      const el = createPinMarkerEl(v, v.id === selectedId, showLabels, handleSelectVehicle);
+      const m = new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(v.coord).addTo(map);
+      markersRef.current.set(v.id, m);
+    }
+  }, [allFiltered, selectedId, selectedVehicle, showRoute, showLabels, overlayLayers, dark, handleSelectVehicle]);
+
   const initMap = useCallback(() => {
     if (!mapContainerRef.current) return;
+    for (const m of markersRef.current.values()) m.remove();
+    markersRef.current.clear();
     if (mapRef.current) {
       mapRef.current.remove();
       mapRef.current = null;
@@ -685,10 +822,10 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
     try {
       const map = new maplibregl.Map({
         container: mapContainerRef.current,
-        style: `https://tiles.openfreemap.org/styles/${dark ? "dark" : "positron"}`,
+        style: osmRasterStyle(dark),
         center: [3.375, 6.555],
-        zoom: 10.9,
-        maxZoom: 20,
+        zoom: 11.2,
+        maxZoom: 19,
         minZoom: 8,
         dragRotate: false,
         pitchWithRotate: false,
@@ -714,7 +851,7 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
             type: "geojson",
             data: { type: "FeatureCollection", features: [] },
             cluster: true,
-            clusterMaxZoom: 17,
+            clusterMaxZoom: 16,
             clusterRadius: 42,
           });
         }
@@ -732,21 +869,21 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
           type: "line",
           source: "route",
           layout: { "line-cap": "round", "line-join": "round" },
-          paint: { "line-color": "#ffffff", "line-width": 8, "line-opacity": 0.9 },
+          paint: { "line-color": "#ffffff", "line-width": 8, "line-opacity": 0.92 },
         });
         map.addLayer({
           id: "route-line",
           type: "line",
           source: "route",
           layout: { "line-cap": "round", "line-join": "round" },
-          paint: { "line-color": "#263e46", "line-width": 4 },
+          paint: { "line-color": "#263e46", "line-width": 4.2 },
         });
         map.addLayer({
           id: "completed-line",
           type: "line",
           source: "completed",
           layout: { "line-cap": "round", "line-join": "round" },
-          paint: { "line-color": "#e37c30", "line-width": 4 },
+          paint: { "line-color": "#f47707", "line-width": 4.5 },
         });
 
         map.addLayer({
@@ -761,20 +898,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
             "circle-stroke-color": "#ffffff",
             "circle-opacity": 0.95,
           },
-        });
-        map.addLayer({
-          id: "cluster-count",
-          type: "symbol",
-          source: "fleet",
-          filter: ["has", "point_count"],
-          layout: {
-            "text-field": ["get", "point_count_abbreviated"],
-            "text-font": ["Noto Sans Regular"],
-            "text-size": 11,
-            "text-allow-overlap": true,
-            "text-ignore-placement": true,
-          },
-          paint: { "text-color": "#ffffff" },
         });
 
         const positionColor: maplibreModule.ExpressionSpecification = [
@@ -812,63 +935,16 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
           },
         });
         map.addLayer({
-          id: "vehicle-icons",
-          type: "symbol",
-          source: "fleet",
-          minzoom: 13,
-          filter: ["!", ["has", "point_count"]],
-          layout: {
-            "icon-image": "vehicle",
-            "icon-size": 0.8,
-            "icon-rotate": ["get", "heading"],
-            "icon-rotation-alignment": "map",
-            "icon-allow-overlap": false,
-          },
-        });
-        map.addLayer({
-          id: "vehicle-labels",
-          type: "symbol",
-          source: "fleet",
-          minzoom: 14,
-          filter: ["!", ["has", "point_count"]],
-          layout: {
-            "text-field": ["get", "code"],
-            "text-font": ["Noto Sans Regular"],
-            "text-size": 10,
-            "text-offset": [0, 2],
-            "text-optional": true,
-          },
-          paint: { "text-color": "#43564d", "text-halo-color": "white", "text-halo-width": 2 },
-        });
-        map.addLayer({
           id: "selected-halo",
           type: "circle",
           source: "selected",
           paint: {
-            "circle-radius": 17,
+            "circle-radius": 20,
             "circle-color": "#f47707",
-            "circle-opacity": 0,
+            "circle-opacity": 0.16,
             "circle-stroke-color": "#f47707",
             "circle-stroke-width": 3,
           },
-        });
-        map.addLayer({
-          id: "selected-truck",
-          type: "symbol",
-          source: "selected",
-          layout: {
-            "icon-image": "vehicle",
-            "icon-size": 1,
-            "icon-rotate": ["get", "heading"],
-            "icon-rotation-alignment": "map",
-            "icon-allow-overlap": true,
-            "text-field": ["get", "code"],
-            "text-font": ["Noto Sans Regular"],
-            "text-offset": [0, 2.25],
-            "text-size": 10,
-            "text-allow-overlap": true,
-          },
-          paint: { "text-color": "#26362d", "text-halo-color": "white", "text-halo-width": 2 },
         });
 
         map.on("click", "clusters", async (e) => {
@@ -892,15 +968,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
           }
         });
 
-        ["clusters", "vehicles", "selected-truck"].forEach((layerId) => {
-          map.on("mouseenter", layerId, () => {
-            map.getCanvas().style.cursor = "pointer";
-          });
-          map.on("mouseleave", layerId, () => {
-            map.getCanvas().style.cursor = "";
-          });
-        });
-
         map.on("moveend", () => {
           setBoundsVersion((v) => v + 1);
         });
@@ -909,8 +976,8 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
       map.on("load", setupLayers);
       map.on("style.load", setupLayers);
       setTimeout(() => {
-        if (!readyRef.current && map.loaded()) setupLayers();
-      }, 2500);
+        if (!readyRef.current) setupLayers();
+      }, 1200);
     } catch {
       setMapError(true);
     }
@@ -919,6 +986,8 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
   useEffect(() => {
     initMap();
     return () => {
+      for (const m of markersRef.current.values()) m.remove();
+      markersRef.current.clear();
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -939,15 +1008,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
       fitFleet();
     }
   }, [mapReady, selectedVehicle, fitSelectedRoute, fitFleet]);
-
-  const handleSelectVehicle = (v: WorkspaceVehicle) => {
-    setSelectedId(v.id);
-    setDetailTab("overview");
-    setFleetMode("map");
-    if (readyRef.current) {
-      fitSelectedRoute(v);
-    }
-  };
 
   const resetAllFilters = () => {
     setQuery("");
@@ -1066,7 +1126,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
 
   return (
     <div id="fleetMain">
-      {/* Exact Workspace SVG symbols */}
       <svg className="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <defs>
           <symbol id="i-truck" viewBox="0 0 24 24">
@@ -1116,7 +1175,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
         </defs>
       </svg>
 
-      {/* Exact Workspace `.page-head` */}
       <section className="page-head">
         <div>
           <div className="eyebrow">
@@ -1151,7 +1209,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
         </div>
       </section>
 
-      {/* Exact Workspace `#metrics` status filter bar */}
       <section className="metrics" aria-label="Fleet status filters" id="metrics">
         <button
           type="button"
@@ -1232,7 +1289,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
         </button>
       </section>
 
-      {/* Mobile Map / List toggle (exact match to Workspace `.fm-modes`) */}
       <div className="fm-modes" role="group" aria-label="Fleet view">
         <button
           type="button"
@@ -1261,7 +1317,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
         </button>
       </div>
 
-      {/* Exact Workspace `.workspace` two-column split */}
       <section className="workspace" data-fleet-mode={fleetMode}>
         <aside className="fleet-list">
           <div className="list-heading">
@@ -1424,6 +1479,7 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
                 <option value="Breakdown">Breakdown</option>
                 <option value="Missed collection">Missed collection</option>
                 <option value="Route departure">Route departure</option>
+                <option value="Long queue">Long queue</option>
                 <option value="Missing update">Missing update</option>
                 <option value="Stale position">Stale position</option>
                 <option value="Evidence review">Evidence review</option>
@@ -1533,7 +1589,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
           </footer>
         </aside>
 
-        {/* Right pane: Exact Workspace `.map-region` */}
         <div
           ref={mapRegionRef}
           className={`map-region ${selectedVehicle ? "fm-has-detail" : ""} ${mapExpanded ? "map-expanded" : ""}`}
@@ -1722,7 +1777,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
             </span>
           </div>
 
-          {/* Exact Workspace slide-over `#detail` drawer */}
           {selectedVehicle ? (
             <aside className="detail" id="detail" aria-label="Selected vehicle details">
               <div className="detail-head">
@@ -2008,7 +2062,6 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
         <span>Freshness thresholds: stale at 5 minutes, missing at 15 minutes.</span>
       </footer>
 
-      {/* Supervisor follow-up modal */}
       {followupModalFor ? (
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4 backdrop-blur-xs"

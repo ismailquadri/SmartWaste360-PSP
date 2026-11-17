@@ -11,16 +11,18 @@ export type SignIn = {
   source: "recorded" | "added";
 };
 
-const KEY = "lawma-signins-v1";
+const KEY = "lawma-signins-v2";
 const ago = (min: number) => new Date(Date.now() - min * 60000).toISOString();
 
 const sample = (accountId: string, email: string): SignIn[] => [
-  { id: `${accountId}-s1`, accountId, email, time: ago(60 * 26), location: "Ikeja, Lagos, NG", device: "Chrome · Windows", ip: "102.89.34.12", result: "success", source: "recorded" },
-  { id: `${accountId}-s2`, accountId, email, time: ago(60 * 9 + 14), location: "Unknown, RU", device: "Unknown browser · Linux", ip: "185.220.101.7", result: "failed", source: "recorded" },
-  { id: `${accountId}-s3`, accountId, email, time: ago(60 * 9 + 12), location: "Unknown, RU", device: "Unknown browser · Linux", ip: "185.220.101.7", result: "failed", source: "recorded" },
-  { id: `${accountId}-s4`, accountId, email, time: ago(60 * 9 + 10), location: "Unknown, RU", device: "Unknown browser · Linux", ip: "185.220.101.7", result: "failed", source: "recorded" },
-  { id: `${accountId}-s5`, accountId, email, time: ago(60 * 3), location: "Ikeja, Lagos, NG", device: "Safari · iPhone", ip: "102.89.40.3", result: "success", source: "recorded" },
-  { id: `${accountId}-s6`, accountId, email, time: ago(60 * 2 + 35), location: "London, GB", device: "Chrome · macOS", ip: "81.2.69.160", result: "success", source: "recorded" },
+  { id: `${accountId}-s1`, accountId, email, time: ago(60 * 32), location: "Alausa Secretariat, Ikeja, Lagos, NG", device: "Chrome · Windows (PSP Dispatch Desk)", ip: "102.89.34.12", result: "success", source: "recorded" },
+  { id: `${accountId}-s2`, accountId, email, time: ago(60 * 18), location: "Oshodi TLS Weighbridge Terminal, Lagos, NG", device: "Edge · Rugged Tablet", ip: "102.89.38.44", result: "success", source: "recorded" },
+  { id: `${accountId}-s3`, accountId, email, time: ago(60 * 9 + 14), location: "St. Petersburg, RU (TOR Exit Node)", device: "Headless Linux · Credential Stuffing Bot", ip: "185.220.101.7", result: "failed", source: "recorded" },
+  { id: `${accountId}-s4`, accountId, email, time: ago(60 * 9 + 12), location: "St. Petersburg, RU (TOR Exit Node)", device: "Headless Linux · Credential Stuffing Bot", ip: "185.220.101.7", result: "failed", source: "recorded" },
+  { id: `${accountId}-s5`, accountId, email, time: ago(60 * 9 + 10), location: "St. Petersburg, RU (TOR Exit Node)", device: "Headless Linux · Credential Stuffing Bot", ip: "185.220.101.7", result: "failed", source: "recorded" },
+  { id: `${accountId}-s6`, accountId, email, time: ago(60 * 5 + 20), location: "Lekki Phase 1, Lagos, NG", device: "Safari · iPhone 15 Pro (MD Mobile)", ip: "102.89.40.3", result: "success", source: "recorded" },
+  { id: `${accountId}-s7`, accountId, email, time: ago(60 * 2 + 35), location: "London, GB (Corporate Roaming VPN)", device: "Chrome · macOS", ip: "81.2.69.160", result: "success", source: "recorded" },
+  { id: `${accountId}-s8`, accountId, email, time: ago(38), location: "Ikeja GRA, Lagos, NG", device: "Chrome · macOS (Finance Controller)", ip: "102.89.41.88", result: "success", source: "recorded" },
 ];
 
 export function loadSignIns(accountId: string, email: string): SignIn[] {
