@@ -51,16 +51,23 @@ function Settings() {
               ))}
             </ul>
           </Panel>
-          <Panel title="Demonstration data">
-            <p className="mb-4 text-sm text-muted-foreground">Restore the sample customers, requests and balances.</p>
-            <Button variant="outline" onClick={() => setConfirm(true)}>Reset demonstration</Button>
+          <Panel title="Statutory concession & settlement">
+            <dl className="divide-y text-sm">
+              <div className="flex justify-between py-2"><dt className="text-muted-foreground">Concession ID</dt><dd className="font-mono">{model.wardProfile.concessionId}</dd></div>
+              <div className="flex justify-between py-2"><dt className="text-muted-foreground">Statutory protection</dt><dd>{model.wardProfile.statutoryClause}</dd></div>
+              <div className="flex justify-between py-2"><dt className="text-muted-foreground">Escrow bank account</dt><dd className="font-mono">{model.wardProfile.bankAccount}</dd></div>
+            </dl>
+          </Panel>
+          <Panel title="Workspace state">
+            <p className="mb-4 text-sm text-muted-foreground">Restore the default ward concession ledger, routes, and escrow balances.</p>
+            <Button variant="outline" onClick={() => setConfirm(true)}>Reset ward ledger</Button>
           </Panel>
         </div>
       </div>
       <Dialog open={confirm} onOpenChange={setConfirm}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Reset demonstration?</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">All changes you made will be replaced with the original sample data.</p>
+          <DialogHeader><DialogTitle>Reset ward ledger?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">All local changes will be replaced with the baseline ward concession state.</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirm(false)}>Cancel</Button>
             <Button variant="destructive" onClick={() => { reset(); setConfirm(false); window.location.reload(); }}>Reset</Button>

@@ -17,9 +17,10 @@ export const Route = createFileRoute("/requests")({
 });
 
 function Requests() {
-  const { model, acceptRequest, declineRequest, approveBinRequest, declineBinRequest, setPickupStatus, assignCrew } = useStore();
+  const { model, acceptRequest, declineRequest, approveBinRequest, declineBinRequest, setPickupStatus, assignCrew, submitGateLockedProof } = useStore();
   const [acceptTarget, setAcceptTarget] = useState<Pickup | null>(null);
   const [declineTarget, setDeclineTarget] = useState<Pickup | null>(null);
+  const [gateTarget, setGateTarget] = useState<Pickup | null>(null);
   const [binDecline, setBinDecline] = useState("");
   const all = model.customers.flatMap((c) => c.pickups.map((p) => ({ pickup: p, customer: c })));
   const groups = {
@@ -82,6 +83,7 @@ function Requests() {
                           <Button size="sm" variant="outline" onClick={() => { setPickupStatus(pickup.id, "Collected", "Waste collected by crew"); toast.success(`${pickup.id} marked collected`); }}>Mark collected</Button>
                         ) : null}
                         <Button size="sm" className="btn-heat" onClick={() => { setPickupStatus(pickup.id, "Completed"); toast.success(`${pickup.id} completed · earnings captured`); }}>Complete</Button>
+                        <Button size="sm" variant="outline" onClick={() => setGateTarget(pickup)}>Gate locked proof</Button>
                         <Button size="sm" variant="ghost" onClick={() => { setPickupStatus(pickup.id, "Cancelled", "Cancelled by partner"); toast(`${pickup.id} cancelled · customer refunded`); }}>Cancel</Button>
                       </>
                     ) : null}
@@ -152,6 +154,18 @@ function Requests() {
         title="Decline bin request"
         onClose={() => setBinDecline("")}
         onConfirm={(r) => { declineBinRequest(binDecline, r); toast("Bin request declined"); setBinDecline(""); }}
+      />
+      <DeclineDialog
+        open={!!gateTarget}
+        title={gateTarget ? `Submit GATE_LOCKED geo-proof · ${gateTarget.id}` : "Gate locked proof"}
+        onClose={() => setGateTarget(null)}
+        onConfirm={(r) => {
+          if (gateTarget) {
+            submitGateLockedProof(gateTarget.id, r || "Gate locked at 07:15 WAT · geo-tagged photo uploaded");
+            toast.success(`GATE_LOCKED proof recorded for ${gateTarget.id} · Bucket B SLA protected`);
+          }
+          setGateTarget(null);
+        }}
       />
     </>
   );

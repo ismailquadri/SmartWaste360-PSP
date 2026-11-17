@@ -8,6 +8,12 @@ export type Vehicle = {
   lastInspection: string; // ISO date (roadworthiness)
   wasteCovered: boolean; // tarpaulin / closed body
   inZone: boolean; // inside assigned service area
+  tier?: "Compactor (20T)" | "Feeder Tricycle (Keke)";
+  fuelLitres?: number;
+  fuelDropStationaryL?: number;
+  compactionOutsideZone?: boolean;
+  wardCode?: string;
+  rendezvousPoint?: string;
 };
 
 export const RULES = {
@@ -39,9 +45,10 @@ export function checkCompliance(v: Vehicle, now = new Date()): Violation[] {
 const iso = (offsetDays: number) => new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
 
 const BASE: Record<string, Omit<Vehicle, "crewName" | "plate">> = {
-  "CREW-01": { crewId: "CREW-01", lng: 3.4747, lat: 6.4413, heading: 90, speedKmh: 34, loadPct: 62, lastPingMin: 1, permitExpires: iso(120), lastInspection: iso(-40), wasteCovered: true, inZone: true },
-  "CREW-02": { crewId: "CREW-02", lng: 3.3515, lat: 6.6018, heading: 200, speedKmh: 57, loadPct: 88, lastPingMin: 2, permitExpires: iso(60), lastInspection: iso(-30), wasteCovered: true, inZone: true },
-  "CREW-03": { crewId: "CREW-03", lng: 3.5852, lat: 6.4698, heading: 30, speedKmh: 0, loadPct: 104, lastPingMin: 14, permitExpires: iso(-3), lastInspection: iso(-120), wasteCovered: false, inZone: true },
+  "CREW-01": { crewId: "CREW-01", lng: 3.4747, lat: 6.4413, heading: 90, speedKmh: 34, loadPct: 62, lastPingMin: 1, permitExpires: iso(120), lastInspection: iso(-40), wasteCovered: true, inZone: true, tier: "Compactor (20T)", fuelLitres: 210, fuelDropStationaryL: 0, compactionOutsideZone: false, wardCode: "PAR-ETI-009", rendezvousPoint: "Lekki Phase 1 Gate" },
+  "CREW-02": { crewId: "CREW-02", lng: 3.3515, lat: 6.6018, heading: 200, speedKmh: 46, loadPct: 84, lastPingMin: 2, permitExpires: iso(60), lastInspection: iso(-30), wasteCovered: true, inZone: true, tier: "Compactor (20T)", fuelLitres: 185, fuelDropStationaryL: 0, compactionOutsideZone: false, wardCode: "PAR-IKJ-002", rendezvousPoint: "Allen Junction Bay" },
+  "CREW-03": { crewId: "CREW-03", lng: 3.5852, lat: 6.4698, heading: 30, speedKmh: 22, loadPct: 76, lastPingMin: 3, permitExpires: iso(90), lastInspection: iso(-18), wasteCovered: true, inZone: true, tier: "Feeder Tricycle (Keke)", fuelLitres: 14, fuelDropStationaryL: 0, compactionOutsideZone: false, wardCode: "PAR-ETI-009", rendezvousPoint: "Chevron Inner Lane -> CREW-01" },
+  "CREW-04": { crewId: "CREW-04", lng: 3.3472, lat: 6.5971, heading: 120, speedKmh: 26, loadPct: 72, lastPingMin: 2, permitExpires: iso(95), lastInspection: iso(-20), wasteCovered: true, inZone: true, tier: "Feeder Tricycle (Keke)", fuelLitres: 12, fuelDropStationaryL: 11, compactionOutsideZone: false, wardCode: "PAR-IKJ-002", rendezvousPoint: "Olowu Inner Lane -> CREW-02" },
 };
 
 export function seedFleet(crews: { id: string; name: string; plate: string }[]): Vehicle[] {

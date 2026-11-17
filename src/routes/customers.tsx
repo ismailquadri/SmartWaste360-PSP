@@ -6,6 +6,7 @@ import { ACCOUNTS } from "@/lib/store";
 import { useAccount } from "@/lib/account";
 import { toast } from "sonner";
 import { money, useStore, type Customer } from "@/lib/store";
+import { evaluateCompoundSplit } from "@/lib/psp-rules";
 import { pageHead } from "@/lib/meta";
 import { Chip, Empty, PageHeader, Panel, Td, Th } from "@/components/partner/kit";
 import { Input } from "@/components/ui/input";
@@ -18,44 +19,47 @@ export const Route = createFileRoute("/customers")({
 });
 
 function Customers() {
-  const { model, customerById, resolveIssue } = useStore();
+  const { model, customerById, resolveIssue, escalateDefaultingDuids } = useStore();
   const [q, setQ] = useState("");
   const [openId, setOpenId] = useState("");
   const list = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return t ? model.customers.filter((c) => `${c.name} ${c.address} ${c.area}`.toLowerCase().includes(t)) : model.customers;
+    return t ? model.customers.filter((c) => `${c.name} ${c.address} ${c.area} ${c.propertyDuid ?? ""}`.toLowerCase().includes(t)) : model.customers;
   }, [model.customers, q]);
   const open = customerById(openId);
   const [adding, setAdding] = useState(false);
 
   return (
     <>
-      <PageHeader eyebrow="Customers" title="Customers" sub={`${model.customers.length} customers across your service areas.`}
-        actions={<Button className="btn-heat" onClick={() => setAdding(true)}><UserPlus className="size-4" />Onboard customer</Button>} />
+      <PageHeader eyebrow={`Ward Cadastre · ${model.wardProfile.concessionId}`} title="Properties & DUIDs" sub={`${model.wardProfile.propertiesInWard.toLocaleString("en-NG")} LAGIS properties (${model.wardProfile.duidsInWard.toLocaleString("en-NG")} DUIDs) in your concession · ${model.customers.length} active sample accounts.`}
+        actions={<Button className="btn-heat" onClick={() => setAdding(true)}><UserPlus className="size-4" />Onboard property</Button>} />
       <OnboardDialog open={adding} onOpenChange={setAdding} onDone={(id) => setOpenId(id)} />
       <div className="relative max-w-sm">
         <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input className="pl-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, address or area" />
+        <Input className="pl-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, DUID, address or area" />
       </div>
       <Panel flush>
         {list.length === 0 ? (
-          <div className="p-5"><Empty>No matching customers.</Empty></div>
+          <div className="p-5"><Empty>No matching properties.</Empty></div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/50">
-                <tr><Th>Name</Th><Th>Address</Th><Th>Bins</Th><Th className="text-right">Wallet</Th><Th className="text-right">Status</Th></tr>
+                <tr><Th>Property / Account</Th><Th>Address & Class</Th><Th>Bins / DUIDs</Th><Th className="text-right">Wallet</Th><Th className="text-right">Status</Th></tr>
               </thead>
               <tbody className="divide-y">
-                {list.map((c) => (
-                  <tr key={c.id} onClick={() => setOpenId(c.id)} className="cursor-pointer hover:bg-accent">
-                    <Td><p className="font-medium">{c.name}</p><p className="font-mono text-[11px] text-muted-foreground">{c.id}</p></Td>
-                    <Td className="text-muted-foreground">{c.address}, {c.area}</Td>
-                    <Td className="font-mono">{c.bins.length}</Td>
-                    <Td className="text-right font-mono tabular-nums">{money(c.balance)}</Td>
-                    <Td className="text-right"><Chip label={c.status} /></Td>
-                  </tr>
-                ))}
+                {list.map((c) => {
+                  const split = c.units?.length ? evaluateCompoundSplit(c.units) : null;
+                  return (
+                    <tr key={c.id} onClick={() => setOpenId(c.id)} className="cursor-pointer hover:bg-accent">
+                      <Td><p className="font-medium">{c.name}</p><p className="font-mono text-[11px] text-muted-foreground">{c.propertyDuid ?? c.id}</p></Td>
+                      <Td className="text-muted-foreground"><p>{c.address}, {c.area}</p><p className="text-[11px]">{c.propertyClass ?? "Residential"}</p></Td>
+                      <Td className="font-mono text-xs">{c.bins.length} bins{split ? ` · ${split.paidUnits}/${split.totalUnits} DUIDs paid` : ""}</Td>
+                      <Td className="text-right font-mono tabular-nums">{money(c.balance)}</Td>
+                      <Td className="text-right"><Chip label={c.status} /></Td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -66,7 +70,14 @@ function Customers() {
           {open ? (
             <>
               <SheetHeader><SheetTitle>{open.name}</SheetTitle></SheetHeader>
-              <CustomerDetail customer={open} onResolve={(i, r) => { resolveIssue(open.id, i, r); toast.success(`${i} resolved`); }} />
+              <CustomerDetail
+                customer={open}
+                onResolve={(i, r) => { resolveIssue(open.id, i, r); toast.success(`${i} resolved`); }}
+                onEscalateDuids={() => {
+                  const n = escalateDefaultingDuids(open.id);
+                  toast.success(n ? `Escalated ${n} defaulting DUID(s) to LAWMA Demand Bills; compliant flats retain service.` : "All defaulting DUIDs are already escalated.");
+                }}
+              />
             </>
           ) : null}
         </SheetContent>
@@ -84,14 +95,41 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-function CustomerDetail({ customer, onResolve }: { customer: Customer; onResolve: (issueId: string, reply: string) => void }) {
+function CustomerDetail({ customer, onResolve, onEscalateDuids }: { customer: Customer; onResolve: (issueId: string, reply: string) => void; onEscalateDuids: () => void }) {
   const [replies, setReplies] = useState<Record<string, string>>({});
+  const split = customer.units?.length ? evaluateCompoundSplit(customer.units) : null;
   return (
     <div className="space-y-4 px-4 pb-6">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">{customer.address}, {customer.area} · {customer.phone}</p>
         <Chip label={customer.status} />
       </div>
+      {split && customer.units ? (
+        <Block title={`Compound DUID split-billing · ${split.paidUnits}/${split.totalUnits} paid (${split.compliantPct}%)`}>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Compliant flats keep collection service. Defaulting DUIDs ({money(split.totalArrearsNgn)} arrears) are escalated individually to LAWMA Demand Bills.
+          </p>
+          <ul className="space-y-2">
+            {customer.units.map((u) => (
+              <li key={u.duid} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs">
+                <div>
+                  <p className="font-medium">{u.unitLabel} · {u.occupant}</p>
+                  <p className="font-mono text-[11px] text-muted-foreground">{u.duid} · {money(u.monthlyTariff)}/mo</p>
+                </div>
+                <Chip
+                  label={u.paid ? "Paid" : u.escalated ? `Escalated · ${money(u.arrears)}` : `Arrears · ${money(u.arrears)}`}
+                  tone={u.paid ? "forest" : u.escalated ? "honey" : "crimson"}
+                />
+              </li>
+            ))}
+          </ul>
+          {split.defaultingCount > 0 ? (
+            <Button size="sm" variant="outline" className="mt-3 w-full" onClick={onEscalateDuids}>
+              Escalate defaulting DUIDs to LAWMA Demand Bill
+            </Button>
+          ) : null}
+        </Block>
+      ) : null}
       <Block title="Wallet">
         <div className="grid grid-cols-2 gap-3">
           <div><p className="text-xs text-muted-foreground">Balance</p><p className="font-mono text-lg">{money(customer.balance)}</p></div>

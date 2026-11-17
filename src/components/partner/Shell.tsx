@@ -75,11 +75,11 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
           <div className="min-w-0 flex-1 leading-tight">
             <p className="truncate text-sm font-medium">{model.profile.name}</p>
-            <p className="truncate font-mono text-[10px] text-muted-foreground">PSP · {model.profile.areas}</p>
+            <p className="truncate font-mono text-[10px] text-muted-foreground">{model.wardProfile.concessionId} · {model.profile.areas}</p>
           </div>
         </div>
         <label className="mt-2 block px-2">
-          <span className="eyebrow text-faint">Demo · signed in as</span>
+          <span className="eyebrow text-faint">Active PSP franchise</span>
           <select
             aria-label="Switch partner account"
             value={account.id}

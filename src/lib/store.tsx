@@ -1,24 +1,31 @@
 const AsyncStorage = { getItem: async (k: string) => localStorage.getItem(k), setItem: async (k: string, v: string) => localStorage.setItem(k, v), removeItem: async (k: string) => localStorage.removeItem(k) };
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
+import type { CompoundUnit } from "./psp-rules";
+
 // Mirrors the vocabulary of customer-app/src/store.tsx so the Live Link
 // protocol and demo data stay consistent across both apps.
 export type Bin = { id: string; size: number; state: 'Requested' | 'Allocated' | 'Out for delivery' | 'Delivered' | 'Active' };
-export type Pickup = { id: string; status: 'Requested' | 'Accepted' | 'Scheduled' | 'Collected' | 'Completed' | 'Declined' | 'Cancelled'; amount: number; created: string; window: string; partner: string; evidence?: string; customerId: string; crew?: string; history?: PickupEvent[] };
+export type Pickup = { id: string; status: 'Requested' | 'Accepted' | 'Scheduled' | 'Collected' | 'Completed' | 'Declined' | 'Cancelled'; amount: number; created: string; window: string; partner: string; evidence?: string; customerId: string; crew?: string; history?: PickupEvent[]; gateLockedProof?: string };
 export type PickupEvent = { status: string; time: string; note?: string | undefined };
 export type Entry = { id: string; title: string; amount: number; time: string; kind: 'credit' | 'reserved' | 'paid' | 'released' };
 export type Issue = { id: string; type: string; detail: string; status: 'Open' | 'In review' | 'Resolved'; time: string; reply?: string };
 export type Attachment = { name: string; type: string; size: number; dataUrl: string };
 export type SupportMessage = { id: string; role: 'assistant' | 'customer'; text: string; time?: string; attachment?: Attachment };
-export type NewCustomer = { name: string; address: string; area: Customer['area']; phone: string; binSize?: number };
+export type NewCustomer = { name: string; address: string; area: Customer['area']; phone: string; binSize?: number; propertyClass?: Customer['propertyClass'] };
 export type BinRequest = { id: string; customerId: string; kind: 'new' | 'additional'; size: number; status: 'Pending' | 'Approved' | 'Declined'; time: string };
-export type Customer = { id: string; name: string; address: string; area: 'Ajah' | 'Ikeja' | 'Lekki'; phone: string; status: 'Active' | 'Attention needed'; bins: Bin[]; balance: number; reserved: number; pickups: Pickup[]; entries: Entry[]; issues: Issue[]; notices: string[]; supportMessages: SupportMessage[] };
-export type Crew = { id: string; name: string; plate: string; members: string[] };
+export type Customer = { id: string; name: string; address: string; area: 'Ajah' | 'Ikeja' | 'Lekki'; phone: string; status: 'Active' | 'Attention needed'; bins: Bin[]; balance: number; reserved: number; pickups: Pickup[]; entries: Entry[]; issues: Issue[]; notices: string[]; supportMessages: SupportMessage[]; propertyDuid?: string; propertyClass?: 'Multi-Tenant Compound' | 'Commercial Plaza' | 'Residential'; units?: CompoundUnit[] };
+export type Crew = { id: string; name: string; plate: string; members: string[]; tier?: 'Compactor (20T)' | 'Feeder Tricycle (Keke)'; rendezvousPoint?: string; standbyPlate?: string };
 export type RouteStop = { id: string; crewId: string; customerId: string; pickupId: string; address: string; window: string; done: boolean };
 export type Settlement = { ref: string; date: string; amount: number; partnerShare: number; authorityShare: number };
+export type TlsManifest = { id: string; facility: string; stream: 'Epe WTE (via TLS)' | 'Jospong MRF' | 'Ikosi Biodigester' | 'Solous Residual'; vehiclePlate: string; grossKg: number; tareKg: number; netTonnes: number; tailgateDwellOk: boolean; moisturePct: number; bonusNgn: number; status: 'Verified' | 'Held · Calibration' };
+export type CureCase = { id: string; pickupOrTicket: string; reason: string; amountHeldNgn: number; hoursRemaining: number; status: 'Action required' | 'Cured · Released'; method?: string; note?: string };
+export type HotSwapRequest = { id: string; crewId: string; brokenPlate: string; standbyPlate: string; reason: string; status: 'Approved · Active' | 'Pending LAWMA Ops'; requestedAt: string };
+export type FuelBarcode = { id: string; batchRef: string; networks: string; amountNgn: number; validHours: number; issuedAt: string; status: 'Active · Redeemable' };
+export type WardProfile = { concessionId: string; lga: string; statutoryClause: string; propertiesInWard: number; duidsInWard: number; monthlyBillingNgn: number; weeklyEscrowGrossNgn: number; weeklyTonnesTls: number; circularTonnes: number; bankAccount: string };
 export type ActivityEvent = { id: string; time: string; text: string; customerId?: string };
 export type PartnerProfile = { name: string; areas: string; contact: string; notifyRequests: boolean; notifyMessages: boolean; notifyRemittance: boolean };
-export type Model = { customers: Customer[]; crews: Crew[]; routeStops: RouteStop[]; binRequests: BinRequest[]; settlements: Settlement[]; activity: ActivityEvent[]; lawmaThread: SupportMessage[]; earningsUncaptured: number; binDeliveryUntil: number; lawmaAckAt: number; profile: PartnerProfile };
+export type Model = { customers: Customer[]; crews: Crew[]; routeStops: RouteStop[]; binRequests: BinRequest[]; settlements: Settlement[]; activity: ActivityEvent[]; lawmaThread: SupportMessage[]; earningsUncaptured: number; binDeliveryUntil: number; lawmaAckAt: number; profile: PartnerProfile; wardProfile: WardProfile; tlsManifests: TlsManifest[]; cureCases: CureCase[]; hotSwaps: HotSwapRequest[]; fuelBarcodes: FuelBarcode[] };
 
 const seedStamp = (offsetMinutes = 0) => new Date(Date.now() - offsetMinutes * 60000).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
 const baseSeed = (): Model => ({
@@ -31,7 +38,14 @@ const baseSeed = (): Model => ({
     { id: 'CUS-018-TUNDE', name: 'Tunde Bakare', address: '18 Olowu Street', area: 'Ikeja', phone: '0805 221 9087', status: 'Active', bins: [{ id: 'BIN-180018', size: 120, state: 'Active' }], balance: 900, reserved: 1450,
       pickups: [{ id: 'PU-180002', status: 'Requested', amount: 1450, created: seedStamp(55), window: 'Tomorrow, 8–11 am', partner: 'Mainland Clean Services', customerId: 'CUS-018-TUNDE' }],
       entries: [{ id: 'RSV-180002', title: 'Reserved for PU-180002', amount: -1450, time: seedStamp(55), kind: 'reserved' }], issues: [], notices: [], supportMessages: [] },
-    { id: 'CUS-042-CHIOMA', name: 'Chioma Eze', address: '4 Mainland Court', area: 'Ikeja', phone: '0701 334 7721', status: 'Active', bins: [{ id: 'BIN-1042', size: 240, state: 'Active' }, { id: 'BIN-1043', size: 240, state: 'Active' }], balance: 2100, reserved: 0,
+    { id: 'CUS-042-CHIOMA', name: 'Mainland Court Tenement (Chioma Eze)', address: '4 Mainland Court', area: 'Ikeja', phone: '0701 334 7721', status: 'Active', bins: [{ id: 'BIN-1042', size: 240, state: 'Active' }, { id: 'BIN-1043', size: 240, state: 'Active' }], balance: 2100, reserved: 0,
+      propertyDuid: 'PROP-IKJ-042', propertyClass: 'Multi-Tenant Compound',
+      units: [
+        { duid: 'DUID-IKJ-042-01', unitLabel: 'Flat 1A (Ground)', occupant: 'Chioma Eze', monthlyTariff: 1500, paid: true, arrears: 0 },
+        { duid: 'DUID-IKJ-042-02', unitLabel: 'Flat 1B (Ground)', occupant: 'Femi Adeola', monthlyTariff: 1500, paid: true, arrears: 0 },
+        { duid: 'DUID-IKJ-042-03', unitLabel: 'Flat 2A (Upper)', occupant: 'Sadiq Bello', monthlyTariff: 1500, paid: false, arrears: 4500 },
+        { duid: 'DUID-IKJ-042-04', unitLabel: 'Flat 2B (Upper)', occupant: 'Nkechi Okafor', monthlyTariff: 1500, paid: false, arrears: 3000 },
+      ],
       pickups: [{ id: 'PU-104201', status: 'Scheduled', amount: 1500, created: seedStamp(300), window: 'Thursday, 1–4 pm', partner: 'Mainland Clean Services', customerId: 'CUS-042-CHIOMA', crew: 'CREW-02' }],
       entries: [{ id: 'RSV-104201', title: 'Reserved for PU-104201', amount: -1500, time: seedStamp(300), kind: 'reserved' }], issues: [], notices: [], supportMessages: [] },
     { id: 'CUS-200-FOLA', name: 'Folasade Adigun', address: '12 Marwa Close', area: 'Lekki', phone: '0902 441 2290', status: 'Active', bins: [{ id: 'BIN-200201', size: 240, state: 'Active' }], balance: 4800, reserved: 0,
@@ -49,16 +63,17 @@ const baseSeed = (): Model => ({
     { id: 'CUS-150-EMEKA', name: 'Emeka Nwosu', address: '31 Allen Avenue', area: 'Ikeja', phone: '0816 773 9902', status: 'Active', bins: [{ id: 'BIN-150501', size: 240, state: 'Active' }], balance: 2500, reserved: 0, pickups: [], entries: [], issues: [], notices: [], supportMessages: [] },
   ],
   crews: [
-    { id: 'CREW-01', name: 'Crew Alpha', plate: 'LND 221 KJA', members: ['Bashir A.', 'Femi O.'] },
-    { id: 'CREW-02', name: 'Crew Beta', plate: 'LND 884 XQ', members: ['Rasheed T.', 'Chidi N.'] },
-    { id: 'CREW-03', name: 'Crew Gamma', plate: 'LND 017 YB', members: ['Grace I.', 'Musa D.'] },
+    { id: 'CREW-01', name: 'Crew Alpha (20T Compactor)', plate: 'LND 221 KJA', members: ['Bashir A.', 'Femi O.'], tier: 'Compactor (20T)', rendezvousPoint: 'Lekki Phase 1 Gate', standbyPlate: 'LND 905 KJA' },
+    { id: 'CREW-02', name: 'Crew Beta (20T Compactor)', plate: 'LND 884 XQ', members: ['Rasheed T.', 'Chidi N.'], tier: 'Compactor (20T)', rendezvousPoint: 'Allen Junction Bay', standbyPlate: 'LND 902 KJA' },
+    { id: 'CREW-03', name: 'Keke Feeder 03 (Inner Lanes)', plate: 'KEKE-ETI-03', members: ['Grace I.', 'Musa D.'], tier: 'Feeder Tricycle (Keke)', rendezvousPoint: 'Chevron -> CREW-01' },
+    { id: 'CREW-04', name: 'Keke Feeder 04 (Inner Lanes)', plate: 'KEKE-IKJ-04', members: ['Sule M.', 'Tunde K.'], tier: 'Feeder Tricycle (Keke)', rendezvousPoint: 'Olowu -> CREW-02' },
   ],
   routeStops: [
     { id: 'STOP-01', crewId: 'CREW-02', customerId: 'CUS-042-CHIOMA', pickupId: 'PU-104201', address: '4 Mainland Court, Ikeja', window: 'Thursday, 1–4 pm', done: false },
     { id: 'STOP-02', crewId: 'CREW-01', customerId: 'CUS-088-IBRAHIM', pickupId: 'PU-088401', address: '9 Freedom Way, Lekki', window: 'Wednesday, 10 am–1 pm', done: false },
   ],
   binRequests: [{ id: 'BINREQ-01', customerId: 'CUS-065-NGOZI', kind: 'new', size: 240, status: 'Pending', time: seedStamp(90) }],
-  settlements: [{ ref: 'SET-220001', date: seedStamp(5000), amount: 18500, partnerShare: 14800, authorityShare: 3700 }],
+  settlements: [{ ref: 'SET-2026-W45-IKJ', date: seedStamp(5000), amount: 4620000, partnerShare: 3696000, authorityShare: 924000 }],
   activity: [
     { id: 'ACT-01', time: seedStamp(35), text: 'Ada Okafor sent a message about her Friday pickup window.', customerId: 'CUS-071-ADA' },
     { id: 'ACT-02', time: seedStamp(40), text: 'New pickup request PU-710001 from Ada Okafor · ₦1,500 reserved.', customerId: 'CUS-071-ADA' },
@@ -66,22 +81,47 @@ const baseSeed = (): Model => ({
     { id: 'ACT-04', time: seedStamp(90), text: 'Ngozi Umeh requested a new 240 L bin.', customerId: 'CUS-065-NGOZI' },
     { id: 'ACT-05', time: seedStamp(600), text: 'PU-088401 scheduled for Ibrahim Suleiman with Crew Alpha.', customerId: 'CUS-088-IBRAHIM' },
     { id: 'ACT-06', time: seedStamp(790), text: 'Ibrahim Suleiman reported a missed collection.', customerId: 'CUS-088-IBRAHIM' },
-    { id: 'ACT-07', time: seedStamp(2790), text: 'PU-200101 completed for Folasade Adigun · earnings captured.', customerId: 'CUS-200-FOLA' },
-    { id: 'ACT-08', time: seedStamp(4190), text: 'PU-210301 completed for Kunle Oyelaran · earnings captured.', customerId: 'CUS-210-KUNLE' },
+    { id: 'ACT-07', time: seedStamp(2790), text: 'Oshodi TLS Weighbridge Ticket WT-4402 verified (14.2 t · 240s dwell).', customerId: 'CUS-200-FOLA' },
+    { id: 'ACT-08', time: seedStamp(4190), text: 'Jospong MRF dry recyclables verified (6.8 t · ₦28,560 circular bonus).', customerId: 'CUS-210-KUNLE' },
   ],
-  lawmaThread: [{ id: 'LAWMA-01', role: 'assistant', text: 'Reminder: weekly remittance is due by Friday 5 pm.', time: seedStamp(1400) }],
+  lawmaThread: [{ id: 'LAWMA-01', role: 'assistant', text: 'Escrow Clearinghouse: Friday 5:00 PM NIBSS NIP batch is queued (80% PSP share · Bucket A + Bucket B).', time: seedStamp(1400) }],
   earningsUncaptured: 2950,
   binDeliveryUntil: 0,
   lawmaAckAt: 0,
   profile: { name: 'Mainland Clean Services', areas: 'Ikeja · Yaba · Ajah · Lekki', contact: 'ops@mainlandclean.ng · 0700 000 1500', notifyRequests: true, notifyMessages: true, notifyRemittance: true },
+  wardProfile: {
+    concessionId: 'PAR-IKJ-002',
+    lga: 'Ikeja',
+    statutoryClause: 'Section 71, Lagos EMPL 2017',
+    propertiesInWard: 4820,
+    duidsInWard: 38400,
+    monthlyBillingNgn: 24600000,
+    weeklyEscrowGrossNgn: 4820000,
+    weeklyTonnesTls: 142.8,
+    circularTonnes: 48.5,
+    bankAccount: 'Sterling Bank · 0084921844',
+  },
+  tlsManifests: [
+    { id: 'WT-4402', facility: 'Oshodi TLS (40T Transfer)', stream: 'Epe WTE (via TLS)', vehiclePlate: 'LND 884 XQ', grossKg: 24600, tareKg: 10400, netTonnes: 14.2, tailgateDwellOk: true, moisturePct: 28, bonusNgn: 0, status: 'Verified' },
+    { id: 'WT-4405', facility: 'Jospong MRF · Oshodi', stream: 'Jospong MRF', vehiclePlate: 'LND 884 XQ', grossKg: 17200, tareKg: 10400, netTonnes: 6.8, tailgateDwellOk: true, moisturePct: 18, bonusNgn: 28560, status: 'Verified' },
+    { id: 'WT-4409', facility: 'Ikosi Market Biodigester', stream: 'Ikosi Biodigester', vehiclePlate: 'KEKE-IKJ-04', grossKg: 3400, tareKg: 950, netTonnes: 2.45, tailgateDwellOk: true, moisturePct: 62, bonusNgn: 10290, status: 'Verified' },
+  ],
+  cureCases: [
+    { id: 'CURE-01', pickupOrTicket: 'PU-088401 · 9 Freedom Way', reason: 'Resident reported missed pickup; 48h cure window open', amountHeldNgn: 85000, hoursRemaining: 31, status: 'Action required' },
+    { id: 'CURE-02', pickupOrTicket: 'WT-4398 · Oshodi TLS', reason: 'Scale calibration drift >0.5% on Bay 2; 60% provisional advance eligible', amountHeldNgn: 60000, hoursRemaining: 19, status: 'Action required' },
+  ],
+  hotSwaps: [],
+  fuelBarcodes: [
+    { id: 'FUEL-BC-W45', batchRef: 'SET-2026-W45-IKJ', networks: 'NNPC Retail · TotalEnergies · Ardova Plc', amountNgn: 840000, validHours: 72, issuedAt: seedStamp(1800), status: 'Active · Redeemable' },
+  ],
 });
 
-const key = 'smartwaste360-partner-demo-v2';
+const key = 'smartwaste360-partner-v3';
 
-export type PartnerAccount = { id: string; name: string; areas: Customer['area'][]; crews: string[]; contact: string; earnings: number; settlements: boolean };
+export type PartnerAccount = { id: string; name: string; areas: Customer['area'][]; crews: string[]; contact: string; earnings: number; settlements: boolean; concessionId?: string; weeklyEscrowGrossNgn?: number; bankAccount?: string };
 export const ACCOUNTS: PartnerAccount[] = [
-  { id: 'mainland', name: 'Mainland Clean Services', areas: ['Ikeja'], crews: ['CREW-02'], contact: 'ops@mainlandclean.ng · 0700 000 1500', earnings: 2950, settlements: true },
-  { id: 'coastal', name: 'Coastal Green PSP', areas: ['Lekki', 'Ajah'], crews: ['CREW-01', 'CREW-03'], contact: 'desk@coastalgreen.ng · 0700 000 2600', earnings: 1450, settlements: false },
+  { id: 'mainland', name: 'Mainland Clean Services', areas: ['Ikeja'], crews: ['CREW-02', 'CREW-04'], contact: 'ops@mainlandclean.ng · 0700 000 1500', earnings: 2950, settlements: true, concessionId: 'PAR-IKJ-002', weeklyEscrowGrossNgn: 4820000, bankAccount: 'Sterling Bank · 0084921844' },
+  { id: 'coastal', name: 'Coastal Green PSP', areas: ['Lekki', 'Ajah'], crews: ['CREW-01', 'CREW-03'], contact: 'desk@coastalgreen.ng · 0700 000 2600', earnings: 1450, settlements: false, concessionId: 'PAR-ETI-009', weeklyEscrowGrossNgn: 6150000, bankAccount: 'Access Bank · 0114829901' },
 ];
 
 // Each partner account gets only the customers in its service areas, plus the
@@ -98,6 +138,13 @@ export const seedFor = (account: PartnerAccount): Model => {
     activity: s.activity.filter(a => !a.customerId || ids.has(a.customerId)),
     settlements: account.settlements ? s.settlements : [],
     earningsUncaptured: account.earnings,
+    wardProfile: {
+      ...s.wardProfile,
+      concessionId: account.concessionId ?? s.wardProfile.concessionId,
+      lga: account.areas.join(' / '),
+      weeklyEscrowGrossNgn: account.weeklyEscrowGrossNgn ?? s.wardProfile.weeklyEscrowGrossNgn,
+      bankAccount: account.bankAccount ?? s.wardProfile.bankAccount,
+    },
     profile: { ...s.profile, name: account.name, areas: account.areas.join(' · '), contact: account.contact } };
 };
 const PARTNER_SHARE = 0.8;
@@ -113,6 +160,12 @@ type Store = {
   sendMessageToCustomer: (customerId: string, text: string, attachment?: Attachment) => void; sendMessageToLawma: (text: string, attachment?: Attachment) => void;
   addCustomer: (input: NewCustomer) => Customer;
   resolveIssue: (customerId: string, issueId: string, reply: string) => void; updateProfile: (patch: Partial<PartnerProfile>) => void; reset: () => void;
+  escalateDefaultingDuids: (customerId: string) => number;
+  cureHold: (cureId: string, method: string, note: string) => void;
+  requestHotSwap: (crewId: string, standbyPlate: string, reason: string) => void;
+  submitGateLockedProof: (pickupId: string, note: string) => void;
+  triggerFridayEscrow: () => Settlement;
+  issueEmergencyFuelBarcode: (amountNgn: number, batchRef: string) => FuelBarcode;
 };
 
 const StoreContext = createContext<Store | null>(null);
@@ -261,7 +314,7 @@ export function StoreProvider({ children, account }: { children: React.ReactNode
     addCustomer(input) {
       const slug = input.name.trim().split(/\s+/)[0]!.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 8) || 'NEW';
       const cid = `CUS-${String(Math.floor(Math.random() * 900) + 100)}-${slug}`;
-      const customer: Customer = { id: cid, name: input.name.trim(), address: input.address.trim(), area: input.area, phone: input.phone.trim(), status: 'Active', bins: [], balance: 0, reserved: 0, pickups: [], entries: [], issues: [], notices: ['Welcome to LAWMA 360. Your waste partner has registered your account.'], supportMessages: [] };
+      const customer: Customer = { id: cid, name: input.name.trim(), address: input.address.trim(), area: input.area, phone: input.phone.trim(), status: 'Active', bins: [], balance: 0, reserved: 0, pickups: [], entries: [], issues: [], notices: ['Welcome to LAWMA 360. Your waste partner has registered your account.'], supportMessages: [], ...(input.propertyClass ? { propertyClass: input.propertyClass } : {}) };
       setModel(s => ({ ...s, customers: [customer, ...s.customers],
         binRequests: input.binSize ? [{ id: id('BINREQ'), customerId: cid, kind: 'new' as const, size: input.binSize, status: 'Pending' as const, time: stamp() }, ...s.binRequests] : s.binRequests,
         activity: limit(s.activity, { id: id('ACT'), time: stamp(), text: `Onboarded ${customer.name} · ${customer.area}${input.binSize ? ` · ${input.binSize}L bin requested` : ''}.`, customerId: cid }) }));
@@ -271,6 +324,75 @@ export function StoreProvider({ children, account }: { children: React.ReactNode
     resolveIssue(customerId, issueId, reply) { setModel(s => ({ ...s, customers: s.customers.map(c => c.id === customerId ? { ...c, status: 'Active' as const, issues: c.issues.map(i => i.id === issueId ? { ...i, status: 'Resolved' as const, reply } : i), notices: limit(c.notices, `${issueId} resolved: ${reply}`) } : c) })); },
     updateProfile(patch) { setModel(s => ({ ...s, profile: { ...s.profile, ...patch } })); },
     reset() { setModel(seed()); AsyncStorage.removeItem(storageKey).catch(() => undefined); },
+    escalateDefaultingDuids(customerId) {
+      let count = 0;
+      setModel(s => ({
+        ...s,
+        customers: s.customers.map(c => {
+          if (c.id !== customerId || !c.units) return c;
+          const units = c.units.map(u => {
+            if (!u.paid && !u.escalated) { count++; return { ...u, escalated: true }; }
+            return u;
+          });
+          return { ...c, units };
+        }),
+        activity: limit(s.activity, { id: id('ACT'), time: stamp(), text: `Escalated defaulting DUIDs in ${customerId} to LAWMA Demand Bills; compliant flats retain service.`, customerId }),
+      }));
+      return count;
+    },
+    cureHold(cureId, method, note) {
+      setModel(s => ({
+        ...s,
+        cureCases: s.cureCases.map(c => c.id === cureId ? { ...c, status: 'Cured · Released', method, note } : c),
+        activity: limit(s.activity, { id: id('ACT'), time: stamp(), text: `48h cure evidence submitted for ${cureId} (${method}); held payout unlocked.` }),
+      }));
+    },
+    requestHotSwap(crewId, standbyPlate, reason) {
+      setModel(s => {
+        const crew = s.crews.find(c => c.id === crewId);
+        if (!crew) return s;
+        const req: HotSwapRequest = { id: id('SWAP'), crewId, brokenPlate: crew.plate, standbyPlate, reason, status: 'Pending LAWMA Ops', requestedAt: stamp() };
+        return {
+          ...s,
+          hotSwaps: [req, ...s.hotSwaps],
+          activity: limit(s.activity, { id: id('ACT'), time: stamp(), text: `60-min breakdown hot-swap requested: ${crew.plate} -> ${standbyPlate} (${reason}).` }),
+        };
+      });
+    },
+    submitGateLockedProof(pickupId, note) {
+      setModel(s => ({
+        ...s,
+        customers: s.customers.map(c => ({
+          ...c,
+          pickups: c.pickups.map(p => p.id === pickupId ? { ...p, gateLockedProof: note, history: [...(p.history ?? []), { status: 'Gate Locked Proof', time: stamp(), note }] } : p),
+        })),
+        activity: limit(s.activity, { id: id('ACT'), time: stamp(), text: `Geo-tagged GATE_LOCKED proof filed for ${pickupId} · Bucket B SLA protected.` }),
+      }));
+    },
+    triggerFridayEscrow() {
+      const heldNgn = model.cureCases.filter(c => c.status === 'Action required').reduce((n, c) => n + c.amountHeldNgn, 0);
+      const amount = model.wardProfile.weeklyEscrowGrossNgn + model.earningsUncaptured;
+      const authorityShare = Math.round(amount * (1 - PARTNER_SHARE));
+      const partnerShare = Math.max(0, amount - authorityShare - heldNgn);
+      const settlement: Settlement = { ref: id('SET-NIP'), date: stamp(), amount, partnerShare, authorityShare };
+      setModel(s => ({
+        ...s,
+        earningsUncaptured: 0,
+        wardProfile: { ...s.wardProfile, weeklyEscrowGrossNgn: 0 },
+        settlements: [settlement, ...s.settlements],
+        activity: limit(s.activity, { id: id('ACT'), time: stamp(), text: `Friday 5 PM Escrow disbursed ${money(partnerShare)} (80% PSP share) via NIBSS NIP · ref ${settlement.ref}.` }),
+      }));
+      return settlement;
+    },
+    issueEmergencyFuelBarcode(amountNgn, batchRef) {
+      const bc: FuelBarcode = { id: id('FUEL-BC'), batchRef, networks: 'NNPC Retail · TotalEnergies · Ardova Plc', amountNgn, validHours: 72, issuedAt: stamp(), status: 'Active · Redeemable' };
+      setModel(s => ({
+        ...s,
+        fuelBarcodes: [bc, ...s.fuelBarcodes],
+        activity: limit(s.activity, { id: id('ACT'), time: stamp(), text: `72h emergency fuel barcode ${bc.id} (${money(amountNgn)}) issued for ${batchRef}.` }),
+      }));
+      return bc;
+    },
   }), [model, ready]);
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }
