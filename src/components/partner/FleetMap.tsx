@@ -769,6 +769,7 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
           filter: ["has", "point_count"],
           layout: {
             "text-field": ["get", "point_count_abbreviated"],
+            "text-font": ["Noto Sans Regular"],
             "text-size": 11,
             "text-allow-overlap": true,
             "text-ignore-placement": true,
@@ -832,6 +833,7 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
           filter: ["!", ["has", "point_count"]],
           layout: {
             "text-field": ["get", "code"],
+            "text-font": ["Noto Sans Regular"],
             "text-size": 10,
             "text-offset": [0, 2],
             "text-optional": true,
@@ -861,6 +863,7 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
             "icon-rotation-alignment": "map",
             "icon-allow-overlap": true,
             "text-field": ["get", "code"],
+            "text-font": ["Noto Sans Regular"],
             "text-offset": [0, 2.25],
             "text-size": 10,
             "text-allow-overlap": true,
@@ -904,6 +907,10 @@ export default function FleetMap({ dark = false }: { dark?: boolean }) {
       };
 
       map.on("load", setupLayers);
+      map.on("style.load", setupLayers);
+      setTimeout(() => {
+        if (!readyRef.current && map.loaded()) setupLayers();
+      }, 2500);
     } catch {
       setMapError(true);
     }
