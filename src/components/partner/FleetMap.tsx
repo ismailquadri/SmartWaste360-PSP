@@ -9,38 +9,6 @@ const maplibregl = (maplibreModule as MapLibreNamespace).default ?? maplibreModu
 type FleetPin = Vehicle & { flagged: boolean };
 type Props = { fleet: FleetPin[]; selected: string; onSelect: (id: string) => void; dark: boolean };
 
-function truckImage(): ImageData {
-  const c = document.createElement("canvas");
-  c.width = 48;
-  c.height = 64;
-  const g = c.getContext("2d")!;
-  g.fillStyle = "#ffffff";
-  g.strokeStyle = "#2b393b";
-  g.lineWidth = 2;
-  g.beginPath();
-  g.roundRect(10, 5, 28, 52, 6);
-  g.fill();
-  g.stroke();
-  g.fillStyle = "#344345";
-  g.fillRect(13, 7, 22, 10);
-  g.fillStyle = "#e1e6e3";
-  g.fillRect(14, 24, 20, 27);
-  g.strokeStyle = "#9caaa3";
-  g.lineWidth = 1;
-  for (let y = 30; y < 51; y += 7) {
-    g.beginPath();
-    g.moveTo(14, y);
-    g.lineTo(34, y);
-    g.stroke();
-  }
-  g.fillStyle = "#263333";
-  g.fillRect(6, 13, 4, 9);
-  g.fillRect(38, 13, 4, 9);
-  g.fillRect(6, 42, 4, 10);
-  g.fillRect(38, 42, 4, 10);
-  return g.getImageData(0, 0, 48, 64);
-}
-
 function osmFallbackStyle(dark: boolean): maplibreModule.StyleSpecification {
   return {
     version: 8,
@@ -57,44 +25,56 @@ function osmFallbackStyle(dark: boolean): maplibreModule.StyleSpecification {
         id: "osm-tiles",
         type: "raster",
         source: "osm",
-        paint: dark ? { "raster-brightness-max": 0.45, "raster-saturation": -0.6 } : {},
+        paint: dark ? { "raster-brightness-max": 0.48, "raster-saturation": -0.55 } : {},
       },
     ],
   };
 }
 
-function toGeoJson(fleet: FleetPin[], selected: string) {
-  return {
-    type: "FeatureCollection" as const,
-    features: fleet.map((v) => ({
-      type: "Feature" as const,
-      geometry: { type: "Point" as const, coordinates: [v.lng, v.lat] as [number, number] },
-      properties: {
-        crewId: v.crewId,
-        plate: v.plate,
-        crewName: v.crewName,
-        heading: v.heading,
-        speedKmh: Math.round(v.speedKmh),
-        loadPct: Math.round(v.loadPct),
-        flagged: v.flagged ? 1 : 0,
-        selected: v.crewId === selected ? 1 : 0,
-        tier: v.tier ?? "Compactor (20T)",
-        fuelLitres: v.fuelLitres ?? 180,
-      },
-    })),
-  };
+function createPinElement(v: FleetPin, isSelected: boolean, onSelect: (id: string) => void): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.setAttribute("aria-label", `${v.crewName} · ${v.plate}`);
+  btn.onclick = () => onSelect(v.crewId);
+  btn.style.cssText = [
+    "display:inline-flex",
+    "align-items:center",
+    "gap:5px",
+    "padding:4px 8px",
+    "border-radius:9999px",
+    "font-family:ui-monospace,SFMono-Regular,Menlo,monospace",
+    "font-size:11px",
+    "font-weight:600",
+    "line-height:1",
+    "white-space:nowrap",
+    "cursor:pointer",
+    "box-shadow:0 2px 8px rgba(0,0,0,0.28)",
+    "transition:transform 150ms ease",
+    v.flagged
+      ? "background:#dc2626;color:#ffffff;border:2px solid #ffffff"
+      : "background:#15803d;color:#ffffff;border:2px solid #ffffff",
+    isSelected ? "outline:3px solid #f47707;outline-offset:2px;transform:scale(1.08);z-index:10" : "",
+  ]
+    .filter(Boolean)
+    .join(";");
+
+  const isKeke = v.tier?.includes("Tricycle");
+  const svg = isKeke
+    ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 18H15V9h4l2 4v5h-1"/><path d="M3 18h1V11l4-2h7"/></svg>`
+    : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>`;
+
+  btn.innerHTML = `${svg}<span>${v.plate}</span>`;
+  return btn;
 }
 
 export default function FleetMap({ fleet, selected, onSelect, dark }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibreModule.Map | null>(null);
-  const popupRef = useRef<maplibreModule.Popup | null>(null);
+  const markersRef = useRef(new Map<string, maplibreModule.Marker>());
   const readyRef = useRef(false);
   const fleetRef = useRef(fleet);
-  const selectedRef = useRef(selected);
   const onSelectRef = useRef(onSelect);
   fleetRef.current = fleet;
-  selectedRef.current = selected;
   onSelectRef.current = onSelect;
 
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -109,7 +89,7 @@ export default function FleetMap({ fleet, selected, onSelect, dark }: Props) {
     }
     const bounds = new maplibregl.LngLatBounds();
     for (const v of items) bounds.extend([v.lng, v.lat]);
-    m.fitBounds(bounds, { padding: 72, maxZoom: 13.6, duration: 500 });
+    m.fitBounds(bounds, { padding: 80, maxZoom: 13.6, duration: 500 });
   }, []);
 
   useEffect(() => {
@@ -151,104 +131,12 @@ export default function FleetMap({ fleet, selected, onSelect, dark }: Props) {
         if (!useOsmFallback) setUseOsmFallback(true);
         else setStatus("error");
       }
-    }, 9000);
+    }, 8000);
 
     m.on("load", () => {
       readyRef.current = true;
       window.clearTimeout(styleTimer);
       setStatus("ready");
-
-      if (!m.hasImage("vehicle")) {
-        m.addImage("vehicle", truckImage(), { pixelRatio: 2 });
-      }
-      m.addSource("fleet", {
-        type: "geojson",
-        data: toGeoJson(fleetRef.current, selectedRef.current),
-      });
-
-      m.addLayer({
-        id: "selected-halo",
-        type: "circle",
-        source: "fleet",
-        filter: ["==", ["get", "selected"], 1],
-        paint: {
-          "circle-radius": 20,
-          "circle-color": "#f47707",
-          "circle-opacity": 0.22,
-          "circle-stroke-color": "#f47707",
-          "circle-stroke-width": 2,
-        },
-      });
-      m.addLayer({
-        id: "vehicles",
-        type: "circle",
-        source: "fleet",
-        paint: {
-          "circle-color": ["case", ["==", ["get", "flagged"], 1], "#dc2626", "#16a34a"],
-          "circle-radius": 9,
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#ffffff",
-        },
-      });
-      m.addLayer({
-        id: "vehicle-icons",
-        type: "symbol",
-        source: "fleet",
-        layout: {
-          "icon-image": "vehicle",
-          "icon-size": 0.68,
-          "icon-rotate": ["get", "heading"],
-          "icon-rotation-alignment": "map",
-          "icon-allow-overlap": true,
-        },
-      });
-      m.addLayer({
-        id: "vehicle-labels",
-        type: "symbol",
-        source: "fleet",
-        layout: {
-          "text-field": ["get", "plate"],
-          "text-size": 11,
-          "text-offset": [0, 1.9],
-          "text-allow-overlap": true,
-        },
-        paint: {
-          "text-color": dark ? "#f5f5f4" : "#1c1917",
-          "text-halo-color": dark ? "#1c1917" : "#ffffff",
-          "text-halo-width": 2,
-        },
-      });
-
-      m.on("click", "vehicles", (e) => {
-        const crewId = e.features?.[0]?.properties?.["crewId"] as string | undefined;
-        if (crewId) onSelectRef.current(crewId);
-      });
-      m.on("click", "vehicle-icons", (e) => {
-        const crewId = e.features?.[0]?.properties?.["crewId"] as string | undefined;
-        if (crewId) onSelectRef.current(crewId);
-      });
-      for (const layer of ["vehicles", "vehicle-icons"]) {
-        m.on("mouseenter", layer, () => {
-          m.getCanvas().style.cursor = "pointer";
-        });
-        m.on("mouseleave", layer, () => {
-          m.getCanvas().style.cursor = "";
-          popupRef.current?.remove();
-        });
-        m.on("mousemove", layer, (e) => {
-          const props = e.features?.[0]?.properties;
-          const geom = e.features?.[0]?.geometry;
-          if (!props || geom?.type !== "Point") return;
-          popupRef.current?.remove();
-          popupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 })
-            .setLngLat(geom.coordinates as [number, number])
-            .setHTML(
-              `<div style="font-size:12px;line-height:1.4"><b>${props["crewName"]}</b><br/><span>${props["plate"]} · ${props["speedKmh"]} km/h · ${props["fuelLitres"]}L</span></div>`,
-            )
-            .addTo(m);
-        });
-      }
-
       m.resize();
       fitFleet(m, fleetRef.current);
     });
@@ -259,9 +147,6 @@ export default function FleetMap({ fleet, selected, onSelect, dark }: Props) {
         if (msg.includes("WebGL")) {
           window.clearTimeout(styleTimer);
           setStatus("error");
-        } else if (!useOsmFallback) {
-          window.clearTimeout(styleTimer);
-          setUseOsmFallback(true);
         }
       }
     });
@@ -269,19 +154,33 @@ export default function FleetMap({ fleet, selected, onSelect, dark }: Props) {
     return () => {
       window.clearTimeout(styleTimer);
       ro.disconnect();
-      popupRef.current?.remove();
+      markersRef.current.forEach((mk) => mk.remove());
+      markersRef.current.clear();
       m.remove();
       mapRef.current = null;
       readyRef.current = false;
     };
   }, [dark, useOsmFallback, retryKey, fitFleet]);
 
+  // Sync HTML Marker pins cleanly across live GPS ticks, selections, dark mode, and account switches.
   useEffect(() => {
     const m = mapRef.current;
-    if (!m || !readyRef.current) return;
-    const src = m.getSource("fleet") as maplibreModule.GeoJSONSource | undefined;
-    if (src) src.setData(toGeoJson(fleet, selected));
-  }, [fleet, selected]);
+    if (!m) return;
+    const activeIds = new Set(fleet.map((v) => v.crewId));
+    for (const [id, mk] of markersRef.current.entries()) {
+      if (!activeIds.has(id)) {
+        mk.remove();
+        markersRef.current.delete(id);
+      }
+    }
+    for (const v of fleet) {
+      const existing = markersRef.current.get(v.crewId);
+      if (existing) existing.remove();
+      const el = createPinElement(v, v.crewId === selected, (id) => onSelectRef.current(id));
+      const mk = new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat([v.lng, v.lat]).addTo(m);
+      markersRef.current.set(v.crewId, mk);
+    }
+  }, [fleet, selected, dark, useOsmFallback, retryKey]);
 
   const fleetIdsKey = fleet.map((f) => f.crewId).join(",");
   useEffect(() => {
@@ -291,7 +190,7 @@ export default function FleetMap({ fleet, selected, onSelect, dark }: Props) {
 
   useEffect(() => {
     const v = fleet.find((f) => f.crewId === selected);
-    if (v && mapRef.current && readyRef.current) {
+    if (v && mapRef.current) {
       mapRef.current.easeTo({
         center: [v.lng, v.lat],
         zoom: Math.max(mapRef.current.getZoom(), 13.4),
