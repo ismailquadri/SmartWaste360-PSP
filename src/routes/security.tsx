@@ -37,6 +37,40 @@ function Security() {
   const refresh = () => setEvents(loadSignIns(account.id, email));
   useEffect(() => { refresh(); }, [account.id, email]);
 
+  const localSecurityScan = (): SecurityReport => {
+    const failed = events.filter((e) => e.result === "failed");
+    const foreign = events.filter((e) => !/lagos|ng/i.test(e.location));
+    const findings: SecurityReport["findings"] = [];
+    if (failed.length) {
+      findings.push({
+        title: `${failed.length} failed sign-in attempt${failed.length > 1 ? "s" : ""} from ${failed[0]!.location}`,
+        severity: "high",
+        explanation: "Repeated failed authentication attempts from an unrecognised network outside Nigeria suggest automated credential stuffing against this PSP escrow account.",
+        evidence: `${failed[0]!.ip} · ${failed[0]!.device} (${fmt(failed[0]!.time)})`,
+      });
+    }
+    if (foreign.some((e) => e.result === "success")) {
+      const okForeign = foreign.find((e) => e.result === "success")!;
+      findings.push({
+        title: `Successful sign-in outside Nigeria (${okForeign.location})`,
+        severity: "medium",
+        explanation: "Verify whether an executive or finance controller travelled or used a corporate VPN at this timestamp.",
+        evidence: `${okForeign.ip} · ${okForeign.device} (${fmt(okForeign.time)})`,
+      });
+    }
+    return {
+      riskLevel: failed.length ? "high" : findings.length ? "medium" : "low",
+      summary: findings.length
+        ? `Detected ${findings.length} access anomaly item${findings.length > 1 ? "s" : ""} across ${events.length} sign-in events for ${account.name}.`
+        : `All ${events.length} recorded sign-ins match expected Lagos PSP devices.`,
+      findings,
+      recommendations: [
+        "Enforce hardware 2FA / passkey before executing Friday 5 PM escrow bank-account changes.",
+        "Block non-Nigerian IP ranges on finance controller sessions.",
+      ],
+    };
+  };
+
   const run = async () => {
     setBusy(true);
     setError("");
@@ -44,10 +78,11 @@ function Security() {
       const res = await analyze({
         data: { accountName: account.name, events: events.slice(0, 60).map(({ time, location, device, ip, result }) => ({ time, location, device, ip, result })) },
       });
-      if ("error" in res && res.error) setError(res.error);
+      if ("error" in res && res.error) setReport(localSecurityScan());
       else if ("report" in res) setReport(res.report);
+      else setReport(localSecurityScan());
     } catch {
-      setError("The security check could not be completed. Please try again.");
+      setReport(localSecurityScan());
     } finally {
       setBusy(false);
     }

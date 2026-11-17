@@ -138,13 +138,32 @@ export const seedFor = (account: PartnerAccount): Model => {
     activity: s.activity.filter(a => !a.customerId || ids.has(a.customerId)),
     settlements: account.settlements ? s.settlements : [],
     earningsUncaptured: account.earnings,
-    wardProfile: {
-      ...s.wardProfile,
-      concessionId: account.concessionId ?? s.wardProfile.concessionId,
-      lga: account.areas.join(' / '),
-      weeklyEscrowGrossNgn: account.weeklyEscrowGrossNgn ?? s.wardProfile.weeklyEscrowGrossNgn,
-      bankAccount: account.bankAccount ?? s.wardProfile.bankAccount,
-    },
+    wardProfile: account.id === "coastal"
+      ? {
+          concessionId: account.concessionId ?? "PAR-ETI-009",
+          lga: "Eti-Osa (Lekki / Ajah)",
+          statutoryClause: s.wardProfile.statutoryClause,
+          propertiesInWard: 6140,
+          duidsInWard: 49200,
+          monthlyBillingNgn: 31200000,
+          weeklyEscrowGrossNgn: account.weeklyEscrowGrossNgn ?? 6150000,
+          weeklyTonnesTls: 184.5,
+          circularTonnes: 62.0,
+          bankAccount: account.bankAccount ?? "Access Bank · 0114829901",
+        }
+      : {
+          ...s.wardProfile,
+          concessionId: account.concessionId ?? s.wardProfile.concessionId,
+          lga: account.areas.join(' / '),
+          weeklyEscrowGrossNgn: account.weeklyEscrowGrossNgn ?? s.wardProfile.weeklyEscrowGrossNgn,
+          bankAccount: account.bankAccount ?? s.wardProfile.bankAccount,
+        },
+    tlsManifests: account.id === "coastal"
+      ? [
+          { id: 'WT-5101', facility: 'Simpson TLS (Lagoon Barge)', stream: 'Epe WTE (via TLS)', vehiclePlate: 'LND 221 KJA', grossKg: 25800, tareKg: 10600, netTonnes: 15.2, tailgateDwellOk: true, moisturePct: 26, bonusNgn: 0, status: 'Verified' },
+          { id: 'WT-5104', facility: 'Jospong MRF · Lekki Hub', stream: 'Jospong MRF', vehiclePlate: 'KEKE-ETI-03', grossKg: 3850, tareKg: 950, netTonnes: 2.9, tailgateDwellOk: true, moisturePct: 16, bonusNgn: 12180, status: 'Verified' },
+        ]
+      : s.tlsManifests,
     profile: { ...s.profile, name: account.name, areas: account.areas.join(' · '), contact: account.contact } };
 };
 const PARTNER_SHARE = 0.8;

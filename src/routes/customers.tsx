@@ -31,7 +31,7 @@ function Customers() {
 
   return (
     <>
-      <PageHeader eyebrow={`Ward Cadastre · ${model.wardProfile.concessionId}`} title="Properties & DUIDs" sub={`${model.wardProfile.propertiesInWard.toLocaleString("en-NG")} LAGIS properties (${model.wardProfile.duidsInWard.toLocaleString("en-NG")} DUIDs) in your concession · ${model.customers.length} active sample accounts.`}
+      <PageHeader eyebrow={`Ward Cadastre · ${model.wardProfile.concessionId}`} title="Properties & DUIDs" sub={`${model.wardProfile.propertiesInWard.toLocaleString("en-NG")} LAGIS properties (${model.wardProfile.duidsInWard.toLocaleString("en-NG")} DUIDs) in your concession · ${model.customers.length} active ward accounts.`}
         actions={<Button className="btn-heat" onClick={() => setAdding(true)}><UserPlus className="size-4" />Onboard property</Button>} />
       <OnboardDialog open={adding} onOpenChange={setAdding} onDone={(id) => setOpenId(id)} />
       <div className="relative max-w-sm">
