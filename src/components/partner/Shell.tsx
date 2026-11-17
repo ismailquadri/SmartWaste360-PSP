@@ -124,7 +124,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </button>
           </div>
         </header>
-        <main className="mx-auto max-w-6xl space-y-6 px-4 pt-6 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-8 lg:pb-8">{children}</main>
+        <main className={cn("mx-auto space-y-6 px-4 pt-6 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-8 lg:pb-8", path.startsWith("/fleet") ? "max-w-[1440px]" : "max-w-6xl")}>{children}</main>
         <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
           {tabs.map((n) => {
             const active = current?.to === n.to;
