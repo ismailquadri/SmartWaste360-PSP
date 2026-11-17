@@ -136,13 +136,9 @@ function osmRasterStyle(dark: boolean): maplibreModule.StyleSpecification {
     sources: {
       osm: {
         type: "raster",
-        tiles: [
-          "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-          "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-          "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-        ],
+        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
         tileSize: 256,
-        attribution: "© OpenStreetMap contributors · CARTO",
+        attribution: "© OpenStreetMap contributors",
       },
     },
     layers: [
@@ -151,8 +147,8 @@ function osmRasterStyle(dark: boolean): maplibreModule.StyleSpecification {
         type: "raster",
         source: "osm",
         paint: dark
-          ? { "raster-brightness-max": 0.42, "raster-saturation": -0.65, "raster-contrast": 0.15 }
-          : { "raster-saturation": -0.15 },
+          ? { "raster-brightness-max": 0.44, "raster-saturation": -0.6, "raster-contrast": 0.12 }
+          : { "raster-saturation": -0.18, "raster-brightness-min": 0.04 },
       },
     ],
   };
